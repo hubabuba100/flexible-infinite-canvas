@@ -19,7 +19,9 @@ import {
 import {
   ZOOM_CONFIGS,
   SCROLL_NODE_POSITIONS,
-  COMPONENT_POSITIONS
+  COMPONENT_POSITIONS,
+  MOUSE_BUTTONS,
+  SELECTION_CLASSES
 } from "./helpers/constants";
 import {
   clampValue,
@@ -34,6 +36,41 @@ import { ScrollBar } from "./components/ScrollBar/scrollbar";
 const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
 const TIME_TO_WAIT = isSafari ? 600 : 300;
 
+export interface SelectionRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface SelectionEventData {
+  /** selection rect relative to the canvas viewport, in screen pixels */
+  screen: SelectionRect;
+  /** selection rect in canvas/content coordinates (zoom & pan applied) */
+  canvas: SelectionRect;
+  selectedElements: HTMLElement[];
+}
+
+export interface PanConfig {
+  /** mouse button that pans the canvas (see MOUSE_BUTTONS), defaults to left */
+  button?: number;
+}
+
+export interface SelectionConfig {
+  enabled?: boolean;
+  /** mouse button that draws the selection (see MOUSE_BUTTONS), defaults to left */
+  button?: number;
+  /** CSS selector identifying selectable items, defaults to `.react-infinite-canvas-selectable` */
+  selectableSelector?: string;
+  /** class applied to selected items, defaults to `react-infinite-canvas-selected` */
+  selectedClassName?: string;
+  /** extra class for the rubber-band selection box */
+  selectionBoxClassName?: string;
+  onSelectionStart?: (data: SelectionEventData) => void;
+  onSelectionChange?: (data: SelectionEventData) => void;
+  onSelectionEnd?: (data: SelectionEventData) => void;
+}
+
 export interface ReactInfiniteCanvasProps {
   children: JSX.Element;
   className?: string;
@@ -41,6 +78,8 @@ export interface ReactInfiniteCanvasProps {
   minZoom?: number;
   maxZoom?: number;
   panOnScroll?: boolean;
+  panConfig?: PanConfig;
+  selectionConfig?: SelectionConfig;
   scrollBarConfig?: {
     renderScrollBar?: boolean;
     startingPosition?: {
@@ -168,6 +207,8 @@ const ReactInfiniteCanvasRenderer = memo(
     minZoom = ZOOM_CONFIGS.DEFAULT_MIN_ZOOM,
     maxZoom = ZOOM_CONFIGS.DEFAULT_MAX_ZOOM,
     panOnScroll = true,
+    panConfig = {},
+    selectionConfig = {},
     customComponents = [],
     scrollBarConfig = {},
     backgroundConfig = {},
@@ -190,6 +231,32 @@ const ReactInfiniteCanvasRenderer = memo(
       children as React.ReactElement & { ref: React.RefObject<HTMLElement> }
     ).ref;
     const isUserPressed = useRef<boolean | null>(null);
+
+    const panButton = panConfig.button ?? MOUSE_BUTTONS.LEFT;
+    const selectionEnabled = selectionConfig.enabled ?? false;
+    const selectionButton = selectionConfig.button ?? MOUSE_BUTTONS.LEFT;
+
+    // the zoom behavior is wired up in a mount-only effect, so the latest
+    // interaction settings are read through a ref to avoid stale closures
+    const interactionConfigRef = useRef({
+      panButton,
+      selectionEnabled,
+      selectionButton
+    });
+    interactionConfigRef.current = {
+      panButton,
+      selectionEnabled,
+      selectionButton
+    };
+    const selectionConfigRef = useRef(selectionConfig);
+    selectionConfigRef.current = selectionConfig;
+
+    const selectionBoxRef = useRef<HTMLDivElement | null>(null);
+    const selectionStateRef = useRef<{
+      startX: number;
+      startY: number;
+      wrapperBounds: DOMRect;
+    } | null>(null);
 
     const d3Zoom = useMemo(() => {
       return zoom<SVGAElement | HTMLDivElement, unknown>().scaleExtent([
@@ -245,14 +312,37 @@ const ReactInfiniteCanvasRenderer = memo(
         : null;
 
       d3Zoom
-        .filter((event: { type: string; ctrlKey: boolean }) => {
-          if (event.type === "mousedown" && !isUserPressed.current) {
-            isUserPressed.current = true;
-            onMouseDown();
-          }
+        .filter(
+          (event: {
+            type: string;
+            ctrlKey: boolean;
+            button?: number;
+            target?: EventTarget;
+          }) => {
+            // never let d3 capture gestures that start on pan-blocked
+            // elements, otherwise it swallows the mousedown (breaking
+            // clicks/caret placement in embedded editors)
+            const target = event.target as HTMLElement | null;
+            if (target && shouldBlockPanEvent({ target })) return false;
 
-          return event.ctrlKey || event.type !== "wheel";
-        })
+            if (event.type === "wheel") return event.ctrlKey;
+
+            if (event.type === "mousedown" || event.type === "dblclick") {
+              const { panButton, selectionEnabled, selectionButton } =
+                interactionConfigRef.current;
+              const button = event.button ?? MOUSE_BUTTONS.LEFT;
+              if (selectionEnabled && button === selectionButton) return false;
+              if (button !== panButton) return false;
+            }
+
+            if (event.type === "mousedown" && !isUserPressed.current) {
+              isUserPressed.current = true;
+              onMouseDown();
+            }
+
+            return true;
+          }
+        )
         .on(
           "zoom",
           (event: {
@@ -260,10 +350,6 @@ const ReactInfiniteCanvasRenderer = memo(
             type: string;
             transform: { k: number; x: number; y: number };
           }) => {
-            const nativeTarget = (event.sourceEvent as MouseEvent)
-              ?.target as HTMLElement;
-            if (nativeTarget && shouldBlockPanEvent({ target: nativeTarget }))
-              return;
             if (event.sourceEvent?.ctrlKey === false && event.type === "zoom") {
               canvasWrapperRef.current?.classList.add(styles.panning);
             }
@@ -607,11 +693,170 @@ const ReactInfiniteCanvasRenderer = memo(
       return isVertical ? (bounds?.top ?? 0) : (bounds?.left ?? 0);
     }, []);
 
+    const getSelectableElements = useCallback(() => {
+      const selector =
+        selectionConfigRef.current.selectableSelector ??
+        `.${SELECTION_CLASSES.SELECTABLE}`;
+      const root = flowRendererRef.current ?? canvasWrapperRef.current;
+      if (!root) return [] as HTMLElement[];
+      return Array.from(root.querySelectorAll<HTMLElement>(selector));
+    }, [flowRendererRef]);
+
+    const buildSelectionData = useCallback(
+      (screenRect: SelectionRect, selectedElements: HTMLElement[]) => {
+        const {
+          k = 1,
+          x = 0,
+          y = 0
+        } = d3Selection.current.property("__zoom") ?? {};
+        return {
+          screen: screenRect,
+          canvas: {
+            x: (screenRect.x - x) / k,
+            y: (screenRect.y - y) / k,
+            width: screenRect.width / k,
+            height: screenRect.height / k
+          },
+          selectedElements
+        };
+      },
+      []
+    );
+
+    const updateSelection = useCallback(
+      (event: MouseEvent, isEnd: boolean) => {
+        const state = selectionStateRef.current;
+        const selectionBox = selectionBoxRef.current;
+        if (!state || !selectionBox) return;
+
+        const { wrapperBounds, startX, startY } = state;
+        const currentX = clampValue({
+          value: event.clientX - wrapperBounds.left,
+          max: wrapperBounds.width
+        });
+        const currentY = clampValue({
+          value: event.clientY - wrapperBounds.top,
+          max: wrapperBounds.height
+        });
+        const screenRect = {
+          x: Math.min(startX, currentX),
+          y: Math.min(startY, currentY),
+          width: Math.abs(currentX - startX),
+          height: Math.abs(currentY - startY)
+        };
+
+        selectionBox.style.display = isEnd ? "none" : "block";
+        selectionBox.style.transform = `translate(${screenRect.x}px, ${screenRect.y}px)`;
+        selectionBox.style.width = `${screenRect.width}px`;
+        selectionBox.style.height = `${screenRect.height}px`;
+
+        const selectedClassName =
+          selectionConfigRef.current.selectedClassName ??
+          SELECTION_CLASSES.SELECTED;
+        const selectedElements: HTMLElement[] = [];
+        for (const element of getSelectableElements()) {
+          const bounds = element.getBoundingClientRect();
+          const elementRect = {
+            x: bounds.left - wrapperBounds.left,
+            y: bounds.top - wrapperBounds.top,
+            width: bounds.width,
+            height: bounds.height
+          };
+          const isIntersecting =
+            elementRect.x < screenRect.x + screenRect.width &&
+            elementRect.x + elementRect.width > screenRect.x &&
+            elementRect.y < screenRect.y + screenRect.height &&
+            elementRect.y + elementRect.height > screenRect.y;
+          element.classList.toggle(selectedClassName, isIntersecting);
+          if (isIntersecting) selectedElements.push(element);
+        }
+
+        const data = buildSelectionData(screenRect, selectedElements);
+        if (isEnd) {
+          selectionStateRef.current = null;
+          selectionConfigRef.current.onSelectionEnd?.(data);
+        } else {
+          selectionConfigRef.current.onSelectionChange?.(data);
+        }
+      },
+      [buildSelectionData, getSelectableElements]
+    );
+
+    const selectionMoveHandler = useCallback(
+      (event: MouseEvent) => updateSelection(event, false),
+      [updateSelection]
+    );
+
+    const selectionEndHandler = useCallback(
+      (event: MouseEvent) => {
+        window.removeEventListener("mousemove", selectionMoveHandler);
+        window.removeEventListener("mouseup", selectionEndHandler);
+        updateSelection(event, true);
+      },
+      [selectionMoveHandler, updateSelection]
+    );
+
+    useEffect(() => {
+      return () => {
+        window.removeEventListener("mousemove", selectionMoveHandler);
+        window.removeEventListener("mouseup", selectionEndHandler);
+      };
+    }, [selectionMoveHandler, selectionEndHandler]);
+
+    const onSelectionMouseDown = (event: React.MouseEvent) => {
+      const { selectionEnabled, selectionButton } =
+        interactionConfigRef.current;
+      if (!selectionEnabled || event.button !== selectionButton) return;
+      const target = event.target as HTMLElement;
+      if (shouldBlockPanEvent({ target })) return;
+      if (!canvasWrapperRef.current) return;
+
+      event.preventDefault();
+      const wrapperBounds = canvasWrapperRef.current.getBoundingClientRect();
+      const startX = event.clientX - wrapperBounds.left;
+      const startY = event.clientY - wrapperBounds.top;
+      selectionStateRef.current = { startX, startY, wrapperBounds };
+
+      const selectedClassName =
+        selectionConfigRef.current.selectedClassName ??
+        SELECTION_CLASSES.SELECTED;
+      for (const element of getSelectableElements()) {
+        element.classList.remove(selectedClassName);
+      }
+
+      selectionConfigRef.current.onSelectionStart?.(
+        buildSelectionData({ x: startX, y: startY, width: 0, height: 0 }, [])
+      );
+
+      window.addEventListener("mousemove", selectionMoveHandler);
+      window.addEventListener("mouseup", selectionEndHandler);
+    };
+
+    const onContextMenuHandler = (event: React.MouseEvent) => {
+      const { panButton, selectionEnabled, selectionButton } =
+        interactionConfigRef.current;
+      const usesRightButton =
+        panButton === MOUSE_BUTTONS.RIGHT ||
+        (selectionEnabled && selectionButton === MOUSE_BUTTONS.RIGHT);
+      if (!usesRightButton) return;
+      const target = event.target as HTMLElement;
+      if (shouldBlockPanEvent({ target })) return;
+      event.preventDefault();
+    };
+
     return (
       <div className={styles.container}>
         <div
           ref={canvasWrapperRef}
-          className={`${styles.canvasWrapper} ${className}`}
+          className={`${styles.canvasWrapper} ${
+            // show the grab cursor only when left-drag actually pans
+            panButton !== MOUSE_BUTTONS.LEFT ||
+            (selectionEnabled && selectionButton === MOUSE_BUTTONS.LEFT)
+              ? styles.selectionMode
+              : ""
+          } ${className}`}
+          onMouseDown={onSelectionMouseDown}
+          onContextMenu={onContextMenuHandler}
         >
           {isSafari ? (
             <div ref={canvasRef} className={styles.canvas}>
@@ -632,11 +877,22 @@ const ReactInfiniteCanvasRenderer = memo(
                   y={ZOOM_CONFIGS.INITIAL_POSITION_Y}
                   width={ZOOM_CONFIGS.DEFAULT_LAYOUT}
                   height={ZOOM_CONFIGS.DEFAULT_LAYOUT}
+                  // foreignObject clips at its bounds by default, which made
+                  // content at negative coordinates disappear
+                  style={{ overflow: "visible" }}
                 >
                   {children}
                 </foreignObject>
               </g>
             </svg>
+          )}
+          {selectionEnabled && (
+            <div
+              ref={selectionBoxRef}
+              className={`${styles.selectionBox} ${
+                selectionConfig.selectionBoxClassName ?? ""
+              }`}
+            />
           )}
         </div>
         {backgroundConfig.disable ? null : (

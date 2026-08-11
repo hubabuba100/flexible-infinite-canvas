@@ -12,14 +12,14 @@ export const ZOOM_CONFIGS = {
   INITIAL_SCROLLBAR_SIZE: 50,
   MIN_SCROLLBAR_SIZE: 15,
   SCROLL_DELTA_DIFF: 1.5,
-  NODE_Y_OFFSET: 110,
+  NODE_Y_OFFSET: 110
 };
 
 export const COMPONENT_POSITIONS = {
   TOP_LEFT: "top-left",
   TOP_RIGHT: "top-right",
   BOTTOM_LEFT: "bottom-left",
-  BOTTOM_CENTER: "bottom-center",
+  BOTTOM_CENTER: "bottom-center"
 };
 
 export const SCROLL_NODE_POSITIONS = {
@@ -28,12 +28,23 @@ export const SCROLL_NODE_POSITIONS = {
   BOTTOM_RIGHT: "bottom-right",
   CENTER_LEFT: "center-left",
   CENTER_RIGHT: "center-right",
-  CENTER_CENTER: "center-center",
+  CENTER_CENTER: "center-center"
 };
 
 export const BLOCK_EVENTS_CLASS = {
   BLOCK_EVENTS: "react-infinite-canvas-block-events",
   BLOCK_SCROLL_CLASS: "react-infinite-canvas-block-scroll",
   BLOCK_ZOOM_CLASS: "react-infinite-canvas-block-zoom",
-  BLOCK_PAN_CLASS: "react-infinite-canvas-block-pan",
+  BLOCK_PAN_CLASS: "react-infinite-canvas-block-pan"
+};
+
+export const MOUSE_BUTTONS = {
+  LEFT: 0,
+  MIDDLE: 1,
+  RIGHT: 2
+};
+
+export const SELECTION_CLASSES = {
+  SELECTABLE: "react-infinite-canvas-selectable",
+  SELECTED: "react-infinite-canvas-selected"
 };

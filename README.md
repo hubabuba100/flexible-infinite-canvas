@@ -73,6 +73,68 @@ ReactDOM.render(<InfiniteCanvas />, document.getElementById("root"));
 | minZoom          | number    | 0.1                                                                                                                                | minimum limit for zooming                                               |
 | maxZoom          | number    | 4                                                                                                                                  | maximum limit for zooming                                               |
 | panOnScroll      | boolean   | true                                                                                                                               | when user scrolls in canvas, instead of zooming, the content scrolls    |
+| panConfig        | object    | { button: MOUSE_BUTTONS.LEFT }                                                                                                     | which mouse button pans the canvas                                      |
+| selectionConfig  | object    | { enabled: false, button: MOUSE_BUTTONS.LEFT, ... }                                                                                | rubber-band selection mode, see [Selection mode](#selection-mode)       |
 | scrollBarConfig  | object    | { renderScrollBar: true, startingPosition: { x: 0, y: 0}, offset: { x: 0, y: 0}, color: "grey", thickness: "8px", minSize: "15px } | To style the scrollbar to your preference                               |
 | customComponents | object    | -                                                                                                                                  | An array of components you can pass to render on canvas at any position |
 | onCanvasMount    | function  | -                                                                                                                                  | A function that is triggered once the canvas is mounted                 |
+
+## Selection mode
+
+Selection mode lets users drag a rubber-band box to select items on the canvas. The pan and selection mouse buttons are configurable independently, so you can e.g. select with the left button and pan with the right one:
+
+```jsx
+import {
+  ReactInfiniteCanvas,
+  MOUSE_BUTTONS,
+  SELECTION_CLASSES,
+} from "react-infinite-canvas";
+
+<ReactInfiniteCanvas
+  panConfig={{ button: MOUSE_BUTTONS.RIGHT }}
+  selectionConfig={{
+    enabled: true,
+    button: MOUSE_BUTTONS.LEFT,
+    onSelectionEnd: ({ canvas, screen, selectedElements }) => {
+      // canvas: selection rect in canvas/content coordinates
+      // screen: selection rect in viewport pixels
+      console.log(canvas.x, canvas.y, canvas.width, canvas.height);
+      console.log(selectedElements);
+    },
+  }}
+>
+  <div>
+    {/* mark items as selectable */}
+    <div className={SELECTION_CLASSES.SELECTABLE}>item</div>
+  </div>
+</ReactInfiniteCanvas>
+```
+
+`selectionConfig` options:
+
+| Option                | Type     | Default                                    | Description                                                          |
+| --------------------- | -------- | ------------------------------------------ | -------------------------------------------------------------------- |
+| enabled               | boolean  | false                                      | enables selection mode                                               |
+| button                | number   | MOUSE_BUTTONS.LEFT                         | mouse button that draws the selection box                            |
+| selectableSelector    | string   | ".react-infinite-canvas-selectable"        | CSS selector that identifies selectable items                        |
+| selectedClassName     | string   | "react-infinite-canvas-selected"           | class applied to items intersecting the selection box                |
+| selectionBoxClassName | string   | -                                          | extra class for the rubber-band box, to override its default styling |
+| onSelectionStart      | function | -                                          | called with `{ screen, canvas, selectedElements }` when a selection starts |
+| onSelectionChange     | function | -                                          | called with `{ screen, canvas, selectedElements }` while dragging    |
+| onSelectionEnd        | function | -                                          | called with `{ screen, canvas, selectedElements }` on mouse release  |
+
+Both rects are `{ x, y, width, height }`: `screen` is relative to the canvas viewport in pixels, `canvas` is in content coordinates (pan and zoom applied), so it stays stable regardless of the current transform.
+
+If pan and selection are configured to the same button while selection is enabled, selection wins and panning is only available via scrolling or touch.
+
+## Blocking canvas events
+
+Wrap parts of your content in `EventBlocker` to stop the canvas from hijacking scroll, zoom, or pan/click gestures over that element (useful for embedded editors, scrollable lists, etc.). Blocked elements also get a normal cursor and text selection back:
+
+```jsx
+import { EventBlocker } from "react-infinite-canvas";
+
+<EventBlocker shouldBlockScroll shouldBlockZoom shouldBlockPan>
+  <MyTextEditor />
+</EventBlocker>
+```
