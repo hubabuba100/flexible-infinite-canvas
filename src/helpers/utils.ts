@@ -40,6 +40,52 @@ export const useOnScreen = (
   return isIntersecting;
 };
 
+export const isSafari =
+  typeof navigator !== "undefined" &&
+  /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+
+/** requestIdleCallback with a setTimeout fallback — Safari doesn't implement it */
+export const scheduleIdleTask = (
+  callback: () => void,
+  { timeout }: { timeout?: number } = {}
+) => {
+  if (typeof window.requestIdleCallback === "function") {
+    window.requestIdleCallback(callback, { timeout });
+  } else {
+    window.setTimeout(callback, 1);
+  }
+};
+
+/**
+ * visual bounds of an element's subtree in client coordinates: the union of
+ * every descendant's rect, so absolutely-positioned items that overflow the
+ * root's own layout box (the normal case on a canvas) are included
+ */
+export const getContentBounds = (root: HTMLElement) => {
+  const rootBounds = root.getBoundingClientRect();
+  let [left, top, right, bottom] = [
+    Number.POSITIVE_INFINITY,
+    Number.POSITIVE_INFINITY,
+    Number.NEGATIVE_INFINITY,
+    Number.NEGATIVE_INFINITY
+  ];
+  const addBounds = (bounds: DOMRect) => {
+    // zero-size rects are hidden elements or layout-only wrappers; including
+    // them would drag the union towards points nothing is rendered at
+    if (bounds.width === 0 && bounds.height === 0) return;
+    left = Math.min(left, bounds.left);
+    top = Math.min(top, bounds.top);
+    right = Math.max(right, bounds.right);
+    bottom = Math.max(bottom, bounds.bottom);
+  };
+  addBounds(rootBounds);
+  for (const element of Array.from(root.getElementsByTagName("*"))) {
+    addBounds(element.getBoundingClientRect());
+  }
+  if (left > right || top > bottom) return rootBounds;
+  return { left, top, width: right - left, height: bottom - top };
+};
+
 export const clampValue = ({
   value,
   min = 0,

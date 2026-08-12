@@ -26,6 +26,19 @@
   cursor: default;
 }
 
+.canvasWrapper.previewMode {
+  cursor: default;
+}
+
+.canvasWrapper :global(.react-infinite-canvas-drag-handle) {
+  cursor: grab;
+}
+
+.canvasWrapper :global(.react-infinite-canvas-dragging) {
+  cursor: grabbing;
+  will-change: translate;
+}
+
 /* elements that opted out of panning should not advertise the drag
    cursor and must stay selectable/editable (e.g. text editors) */
 .canvasWrapper :global(.react-infinite-canvas-block-pan),
@@ -60,6 +73,11 @@
   inset-inline-start: 0;
   inset-block-start: 0;
   transition: transform 0.01s ease;
+  /* keep the zoom container on its own compositing layer; without it Safari
+     rasterizes out-of-view parts lazily, which shows up as blank areas
+     after panning/zooming */
+  will-change: transform;
+  transform: translate3d(0, 0, 0);
 }
 
 .contentWrapper {

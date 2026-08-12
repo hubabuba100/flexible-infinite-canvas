@@ -6,13 +6,18 @@ export type {
   PanConfig,
   SelectionConfig,
   SelectionEventData,
-  SelectionRect
+  SelectionRect,
+  SelectionMultiSelectKey,
+  DragConfig,
+  DragEventData,
+  NestingConfig
 } from "./App";
 export {
   COMPONENT_POSITIONS,
   SCROLL_NODE_POSITIONS,
   MOUSE_BUTTONS,
-  SELECTION_CLASSES
+  SELECTION_CLASSES,
+  DRAG_CLASSES
 } from "./helpers/constants";
 export { Background } from "./components/Background/background";
 export type { BackgroundProps } from "./components/Background/background";

@@ -5,3 +5,9 @@
   inset-block-start: 0;
   inset-inline-start: 0;
 }
+
+.cssPattern {
+  position: absolute;
+  inset: 0;
+  background-repeat: repeat;
+}
