@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import { clampValue } from "../../helpers/utils";
+import { clampValue, isSafari } from "../../helpers/utils";
 
 import styles from "./styles.module.css";
 
@@ -49,6 +49,32 @@ export const Background = ({
   const scaledSize = size * scale;
   const circleSize = Math.max(minSize, scaledSize);
   const patternId = `patternId-${id}`;
+
+  // Safari re-rasterizes SVG patterns on every attribute change, which makes
+  // the background repaint on each pan/zoom frame painfully slow there; a
+  // tiled CSS gradient renders the same dot grid much faster
+  if (isSafari) {
+    return (
+      <div
+        className={`${className} ${styles.dotSvgContainer}`}
+        style={backgroundColor ? { backgroundColor: backgroundColor } : {}}
+        role="img"
+        aria-label="Background pattern"
+      >
+        <div
+          className={styles.cssPattern}
+          style={{
+            opacity: dynamicOpacity,
+            backgroundImage: `radial-gradient(circle at ${circleSize}px ${circleSize}px, ${elementColor} ${circleSize}px, transparent ${circleSize}px)`,
+            backgroundSize: `${scaledGap}px ${scaledGap}px`,
+            backgroundPosition: `${translateX % scaledGap}px ${
+              translateY % scaledGap
+            }px`
+          }}
+        />
+      </div>
+    );
+  }
 
   return (
     <svg
