@@ -223,9 +223,19 @@ Wrap parts of your content in `EventBlocker` to stop the canvas from hijacking s
 ```jsx
 import { EventBlocker } from "react-infinite-canvas";
 
-<EventBlocker shouldBlockScroll shouldBlockZoom shouldBlockPan>
+<EventBlocker
+  shouldBlockScroll
+  shouldBlockZoom
+  shouldBlockPan
+  shouldBlockDoubleClick
+>
   <MyTextEditor />
 </EventBlocker>
 ```
+
+`shouldBlockDoubleClick` defaults to `true`, so double-clicking blocked
+content does not call the canvas `onDoubleClick` handler or trigger
+double-click-to-zoom. Set it to `false` to let double-clicks on that content
+reach the canvas while keeping its other blocked interactions.
 
 Scroll blocking is decided per gesture, not per event: if a canvas scroll is already in progress when the cursor passes over a blocked item, the canvas keeps scrolling; only a scroll gesture that *starts* over a blocked item is blocked (and stays blocked for that gesture even if the cursor leaves the item).

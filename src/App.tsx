@@ -31,6 +31,7 @@ import {
   isSafari,
   scheduleIdleTask,
   shouldBlockEvent,
+  shouldBlockDoubleClickEvent,
   shouldBlockPanEvent
 } from "./helpers/utils";
 
@@ -455,6 +456,13 @@ const ReactInfiniteCanvasRenderer = memo(
             // clicks/caret placement in embedded editors)
             const target = event.target as HTMLElement | null;
             if (target && shouldBlockPanEvent({ target })) return false;
+            if (
+              event.type === "dblclick" &&
+              target &&
+              shouldBlockDoubleClickEvent({ target })
+            ) {
+              return false;
+            }
 
             if (event.type === "wheel") return event.ctrlKey;
 
@@ -1369,7 +1377,7 @@ const ReactInfiniteCanvasRenderer = memo(
     const onCanvasDoubleClickHandler = (event: React.MouseEvent) => {
       if (!onDoubleClick) return;
       const target = event.target as HTMLElement;
-      if (shouldBlockPanEvent({ target })) return;
+      if (shouldBlockDoubleClickEvent({ target })) return;
       onDoubleClick(
         event.nativeEvent,
         screenToCanvasPosition(event.clientX, event.clientY)

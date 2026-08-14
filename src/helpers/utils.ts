@@ -337,16 +337,23 @@ export const onScrollHandler = ({
 export const getBlockClassName = (
   shouldBlockScroll: boolean,
   shouldBlockZoom: boolean,
-  shouldBlockPan: boolean
+  shouldBlockPan: boolean,
+  shouldBlockDoubleClick: boolean
 ) => {
-  if (shouldBlockScroll && shouldBlockZoom && shouldBlockPan) {
+  if (
+    shouldBlockScroll &&
+    shouldBlockZoom &&
+    shouldBlockPan &&
+    shouldBlockDoubleClick
+  ) {
     return `${BLOCK_EVENTS_CLASS.BLOCK_EVENTS}`;
   }
 
   return [
     shouldBlockScroll && `${BLOCK_EVENTS_CLASS.BLOCK_SCROLL_CLASS}`,
     shouldBlockZoom && `${BLOCK_EVENTS_CLASS.BLOCK_ZOOM_CLASS}`,
-    shouldBlockPan && `${BLOCK_EVENTS_CLASS.BLOCK_PAN_CLASS}`
+    shouldBlockPan && `${BLOCK_EVENTS_CLASS.BLOCK_PAN_CLASS}`,
+    shouldBlockDoubleClick && `${BLOCK_EVENTS_CLASS.BLOCK_DOUBLE_CLICK_CLASS}`
   ]
     .filter(Boolean)
     .join(" ");
@@ -361,6 +368,16 @@ export const shouldBlockPanEvent = (event: { target: HTMLElement }) => {
     return true;
   }
   return false;
+};
+
+export const shouldBlockDoubleClickEvent = (event: {
+  target: HTMLElement;
+}) => {
+  const target = event.target as HTMLElement;
+  return Boolean(
+    target.closest(`.${BLOCK_EVENTS_CLASS.BLOCK_DOUBLE_CLICK_CLASS}`) ||
+      target.closest(`.${BLOCK_EVENTS_CLASS.BLOCK_EVENTS}`)
+  );
 };
 
 export const shouldBlockEvent = (event: {
